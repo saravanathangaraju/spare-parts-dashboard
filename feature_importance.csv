@@ -1,0 +1,10 @@
+feature,importance
+Usage_Hours_Last_30_Days,0.45190698
+Failure_Count_Last_6_Months,0.22791453
+Criticality_Score,0.21591671
+Current_Inventory,0.05964978
+Avg_Temperature,0.025590496
+Operational_Cycles_Last_6_Months,0.014293978
+Machine_Age_Years,0.004617155
+Supply_Disruption_Flag,0.000110436675
+Lead_Time_Days,0.0
