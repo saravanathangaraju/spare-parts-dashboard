@@ -5,15 +5,15 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import cvxpy as cp
 
-# Set page config
+# Page configuration
 st.set_page_config(page_title="Spare Parts Forecast & Optimization", layout="wide")
 
 # Title
 st.title("Spare Parts Forecasting and Inventory Optimization")
-st.markdown("A tool to forecast demand and recommend optimal inventory decisions for aerospace maintenance.")
+st.markdown("A decision support tool for aerospace spare parts planning using predictive analytics and optimization.")
 
 # Load data
-@st.cache
+@st.cache_data
 def load_data():
     df = pd.read_csv('spare_parts_data.csv')
     feat = pd.read_csv('feature_importance.csv')
@@ -22,9 +22,9 @@ def load_data():
 data, feature_importance = load_data()
 
 # Sidebar navigation
-page = st.sidebar.radio("Select Page", ["Demand Forecast", "Scenario Simulation", "Inventory Optimization"])
+page = st.sidebar.radio("Navigate", ["Demand Forecast", "Scenario Simulation", "Inventory Optimization"])
 
-# ===================== Demand Forecast Page =====================
+# ===================== Demand Forecast =====================
 if page == "Demand Forecast":
     st.subheader("Actual vs Predicted Demand")
 
@@ -40,7 +40,7 @@ if page == "Demand Forecast":
             [data['Actual'].min(), data['Actual'].max()], 'r--')
     ax.set_xlabel("Actual Demand")
     ax.set_ylabel("Predicted Demand")
-    ax.set_title("Actual vs Predicted Spare Part Demand")
+    ax.set_title("Actual vs Predicted Demand")
     st.pyplot(fig)
 
     st.subheader("Feature Importance")
@@ -49,9 +49,9 @@ if page == "Demand Forecast":
     ax2.set_title("Feature Importance")
     st.pyplot(fig2)
 
-# ===================== Scenario Simulation Page =====================
+# ===================== Scenario Simulation =====================
 elif page == "Scenario Simulation":
-    st.subheader("Simulate Demand Forecast")
+    st.subheader("Simulate Spare Part Demand")
 
     usage = st.slider("Usage Hours Last 30 Days", min_value=300, max_value=500, value=400)
     failures = st.slider("Failure Count Last 6 Months", min_value=0, max_value=6, value=1)
@@ -82,9 +82,9 @@ elif page == "Scenario Simulation":
     st.subheader("Predicted Demand")
     st.write(f"Expected Spare Part Demand: {round(predicted)} units")
 
-# ===================== Inventory Optimization Page =====================
+# ===================== Inventory Optimization =====================
 elif page == "Inventory Optimization":
-    st.subheader("Optimal Order Quantity Simulation")
+    st.subheader("Inventory Optimization using MILP")
 
     demand = st.number_input("Forecasted Demand (units)", value=35)
     holding_cost = st.number_input("Holding Cost per Unit ($)", value=2.0)
@@ -112,14 +112,21 @@ elif page == "Inventory Optimization":
         problem.solve()
 
         st.write("### Optimization Results")
-        st.write(f"Optimal Order Quantity: {round(q.value)} units")
-        st.write(f"Total Cost: ${problem.value:.2f}")
+
+        if q.value is not None:
+            st.write(f"Optimal Order Quantity: {round(q.value)} units")
+        else:
+            st.write("Could not compute optimal order quantity.")
 
         if ending_inventory.value is not None:
             st.write(f"Expected Ending Inventory: {round(ending_inventory.value)} units")
+        else:
+            st.write("Could not compute expected ending inventory.")
+
         if backorder.value is not None:
             st.write(f"Expected Backorder Amount: {round(backorder.value)} units")
+        else:
+            st.write("Could not compute expected backorder amount.")
 
     st.markdown("---")
-    st.markdown("This optimization helps in deciding how much inventory to order to balance holding costs and stock-out penalties.")
-
+    st.markdown("This module helps you determine the right inventory levels balancing cost and availability.")
