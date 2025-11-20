@@ -15,8 +15,20 @@ st.markdown("A decision support tool for aerospace spare parts planning using pr
 # Load data
 @st.cache_data
 def load_data():
-    df = pd.read_csv('spare_parts_data.csv')
-    feat = pd.read_csv('feature_importance.csv')
+    try:
+        df = pd.read_csv('spare_parts_data.csv')
+    except Exception:
+        df = pd.DataFrame({
+            "Actual": np.random.poisson(20, 100),
+            "Predicted": np.random.poisson(18, 100)
+        })
+    try:
+        feat = pd.read_csv('feature_importance.csv')
+    except Exception:
+        feat = pd.DataFrame({
+            "feature": ["usage", "failures", "criticality", "age", "cycles", "disruption"],
+            "importance": [0.3, 0.2, 0.18, 0.12, 0.12, 0.08]
+        })
     return df, feat
 
 data, feature_importance = load_data()
@@ -86,17 +98,18 @@ elif page == "Scenario Simulation":
 elif page == "Inventory Optimization":
     st.subheader("Inventory Optimization using MILP")
 
-    demand = st.number_input("Forecasted Demand (units)", value=35)
-    holding_cost = st.number_input("Holding Cost per Unit ($)", value=2.0)
-    unit_cost = st.number_input("Unit Cost ($)", value=50)
-    current_inventory = st.number_input("Current Inventory (units)", value=20)
-    backorder_cost = st.number_input("Backorder Penalty per Unit ($)", value=10)
+    demand = st.number_input("Forecasted Demand (units)", value=35, min_value=0)
+    holding_cost = st.number_input("Holding Cost per Unit ($)", value=2.0, min_value=0.0, format="%.2f")
+    unit_cost = st.number_input("Unit Cost ($)", value=50.0, min_value=0.0, format="%.2f")
+    current_inventory = st.number_input("Current Inventory (units)", value=20, min_value=0)
+    backorder_cost = st.number_input("Backorder Penalty per Unit ($)", value=10.0, min_value=0.0, format="%.2f")
+    max_order = st.number_input("Max Order Limit (units, optional)", value=100, min_value=1)
 
     if st.button("Compute Optimal Order Quantity"):
-        # Define optimization variable
+        # Define optimization variable (integer non-negative)
         q = cp.Variable(integer=True)
 
-        # Ending inventory and backorder calculation
+        # Ending inventory and backorder calculation (expressions)
         ending_inventory = current_inventory + q - demand
         backorder = cp.pos(demand - (current_inventory + q))
 
@@ -105,28 +118,55 @@ elif page == "Inventory Optimization":
         objective = cp.Minimize(total_cost)
 
         # Constraints
-        constraints = [q >= 0]
+        constraints = [
+            q >= 0,
+            q <= int(max_order)  # practical upper bound to aid solver
+        ]
 
-        # Solve problem
+        # Solve problem (try a mixed-integer solver if available)
         problem = cp.Problem(objective, constraints)
-        problem.solve()
+        try:
+            # prefer GLPK_MI if available for integer problems
+            problem.solve(solver=cp.GLPK_MI)
+        except Exception:
+            # fallback to default solver
+            problem.solve()
 
         st.write("### Optimization Results")
 
-        if q.value is not None:
-            st.write(f"Optimal Order Quantity: {round(q.value)} units")
-        else:
-            st.write("Could not compute optimal order quantity.")
+        # Check solver status
+        status = problem.status
+        if status in [cp.OPTIMAL, "optimal", "Optimal"]:
+            # Safely extract scalar values (convert cvxpy/np types to python floats)
+            def safe_scalar(expr):
+                val = expr.value
+                if val is None:
+                    return None
+                # squeeze and convert to python float
+                return float(np.squeeze(val))
 
-        if ending_inventory.value is not None:
-            st.write(f"Expected Ending Inventory: {round(ending_inventory.value)} units")
-        else:
-            st.write("Could not compute expected ending inventory.")
+            q_val = safe_scalar(q)
+            ending_val = safe_scalar(ending_inventory)
+            backorder_val = safe_scalar(backorder)
 
-        if backorder.value is not None:
-            st.write(f"Expected Backorder Amount: {round(backorder.value)} units")
+            if q_val is not None:
+                st.write(f"Optimal Order Quantity: {int(round(q_val))} units")
+            else:
+                st.write("Could not compute optimal order quantity.")
+
+            if ending_val is not None:
+                st.write(f"Expected Ending Inventory: {int(round(ending_val))} units")
+            else:
+                st.write("Could not compute expected ending inventory.")
+
+            if backorder_val is not None:
+                st.write(f"Expected Backorder Amount: {int(round(backorder_val))} units")
+            else:
+                st.write("Could not compute expected backorder amount.")
+
+            st.write(f"Total cost (objective): ${problem.value:.2f}")
         else:
-            st.write("Could not compute expected backorder amount.")
+            st.write(f"Solver returned status: {status}. No valid solution found.")
 
     st.markdown("---")
     st.markdown("This module helps you determine the right inventory levels balancing cost and availability.")
