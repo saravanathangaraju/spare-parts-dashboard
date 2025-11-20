@@ -2,131 +2,153 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 import cvxpy as cp
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-# Page configuration
-st.set_page_config(page_title="Spare Parts Forecast & Optimization", layout="wide")
+# -------------------------------
+# Header Section
+# -------------------------------
+st.set_page_config(page_title="Spare Parts Inventory Dashboard", layout="wide")
+st.title("🛠️ Spare Parts Forecasting & Optimization Dashboard")
 
-# Title
-st.title("Spare Parts Forecasting and Inventory Optimization")
-st.markdown("A decision support tool for aerospace spare parts planning using predictive analytics and optimization.")
-
-# Load data
+# -------------------------------
+# Load Simulated Dataset
+# -------------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv('spare_parts_data.csv')
-    feat = pd.read_csv('feature_importance.csv')
-    return df, feat
+    np.random.seed(42)
+    data = pd.DataFrame({
+        'machine_age': np.random.randint(1, 15, 50),
+        'operational_cycles': np.random.randint(200, 1000, 50),
+        'external_event_index': np.random.normal(0, 1, 50),
+        'part_failure_rate': np.random.uniform(0.01, 0.2, 50),
+        'lead_time_days': np.random.randint(3, 20, 50),
+    })
+    data['spare_part_demand'] = (
+        50
+        + 2 * data['machine_age']
+        + 0.01 * data['operational_cycles']
+        + 20 * data['part_failure_rate']
+        + 5 * data['external_event_index']
+        + np.random.normal(0, 5, 50)
+    ).round().astype(int)
+    return data
 
-data, feature_importance = load_data()
 
-# Sidebar navigation
-page = st.sidebar.radio("Navigate", ["Demand Forecast", "Scenario Simulation", "Inventory Optimization"])
+df = load_data()
 
-# ===================== Demand Forecast =====================
-if page == "Demand Forecast":
-    st.subheader("Actual vs Predicted Demand")
+# -------------------------------
+# Sidebar Navigation
+# -------------------------------
+section = st.sidebar.radio(
+    "Select Section",
+    [
+        "📊 Exploratory Data",
+        "📈 Forecasting (XGBoost)",
+        "📦 Inventory Optimization (MILP)",
+    ],
+)
 
-    if st.checkbox("Show Raw Data"):
-        st.dataframe(data)
+# -------------------------------
+# 📊 Exploratory Data Section
+# -------------------------------
+if section == "📊 Exploratory Data":
+    st.subheader("Exploratory Data Overview")
+    st.dataframe(df)
 
-    st.write("### Data Summary")
-    st.write(data.describe())
-
-    fig, ax = plt.subplots(figsize=(8,6))
-    sns.scatterplot(x=data['Actual'], y=data['Predicted'], ax=ax)
-    ax.plot([data['Actual'].min(), data['Actual'].max()],
-            [data['Actual'].min(), data['Actual'].max()], 'r--')
-    ax.set_xlabel("Actual Demand")
-    ax.set_ylabel("Predicted Demand")
-    ax.set_title("Actual vs Predicted Demand")
+    st.markdown("#### 📌 Demand Distribution")
+    fig, ax = plt.subplots()
+    ax.hist(df['spare_part_demand'], bins=15, color='skyblue', edgecolor='black')
+    ax.set_title("Spare Part Demand Distribution")
+    ax.set_xlabel("Demand")
+    ax.set_ylabel("Frequency")
     st.pyplot(fig)
 
-    st.subheader("Feature Importance")
-    fig2, ax2 = plt.subplots(figsize=(8,6))
-    sns.barplot(x='importance', y='feature', data=feature_importance.sort_values(by='importance', ascending=False), ax=ax2)
-    ax2.set_title("Feature Importance")
-    st.pyplot(fig2)
+# -------------------------------
+# 📈 Forecasting with XGBoost
+# -------------------------------
+elif section == "📈 Forecasting (XGBoost)":
+    st.subheader("XGBoost Forecasting Model")
 
-# ===================== Scenario Simulation =====================
-elif page == "Scenario Simulation":
-    st.subheader("Simulate Spare Part Demand")
+    features = [
+        'machine_age',
+        'operational_cycles',
+        'external_event_index',
+        'part_failure_rate',
+        'lead_time_days',
+    ]
+    target = 'spare_part_demand'
 
-    usage = st.slider("Usage Hours Last 30 Days", min_value=300, max_value=500, value=400)
-    failures = st.slider("Failure Count Last 6 Months", min_value=0, max_value=6, value=1)
-    disruption = st.selectbox("Supply Disruption", ["No", "Yes"])
-    criticality = st.slider("Criticality Score", min_value=6, max_value=10, value=8)
-    age = st.slider("Machine Age (Years)", min_value=5, max_value=12, value=8)
-    cycles = st.slider("Operational Cycles Last 6 Months", min_value=100, max_value=250, value=150)
+    X = df[features]
+    y = df[target]
 
-    disruption_val = 0 if disruption == "No" else 1
-
-    predicted = (
-        usage * 0.05 +
-        failures * 2 +
-        criticality * 1.5 +
-        age * 0.3 +
-        cycles * 0.02 +
-        disruption_val * 5
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
     )
 
-    st.write("### Simulation Inputs")
-    st.write(f"Usage Hours: {usage}")
-    st.write(f"Failures: {failures}")
-    st.write(f"Supply Disruption: {disruption}")
-    st.write(f"Criticality Score: {criticality}")
-    st.write(f"Machine Age: {age}")
-    st.write(f"Operational Cycles: {cycles}")
+    model = xgb.XGBRegressor(n_estimators=100, learning_rate=0.1)
+    model.fit(X_train, y_train)
 
-    st.subheader("Predicted Demand")
-    st.write(f"Expected Spare Part Demand: {round(predicted)} units")
+    y_pred = model.predict(X_test)
 
-# ===================== Inventory Optimization =====================
-elif page == "Inventory Optimization":
-    st.subheader("Inventory Optimization using MILP")
+    st.markdown("##### 🔍 Model Evaluation")
+    st.write("MAE:", round(mean_absolute_error(y_test, y_pred), 2))
+    st.write("RMSE:", round(mean_squared_error(y_test, y_pred, squared=False), 2))
 
-    demand = st.number_input("Forecasted Demand (units)", value=35)
-    holding_cost = st.number_input("Holding Cost per Unit ($)", value=2.0)
-    unit_cost = st.number_input("Unit Cost ($)", value=50)
-    current_inventory = st.number_input("Current Inventory (units)", value=20)
-    backorder_cost = st.number_input("Backorder Penalty per Unit ($)", value=10)
+    st.markdown("##### 📉 Actual vs Predicted")
+    comparison_df = pd.DataFrame({
+        'Actual': y_test.values,
+        'Predicted': y_pred.round()
+    }).reset_index(drop=True)
+
+    st.dataframe(comparison_df)
+
+    fig, ax = plt.subplots()
+    ax.plot(comparison_df['Actual'], label='Actual', marker='o')
+    ax.plot(comparison_df['Predicted'], label='Predicted', marker='x')
+    ax.set_title("Predicted vs Actual Demand")
+    ax.set_xlabel("Sample")
+    ax.set_ylabel("Demand")
+    ax.legend()
+    st.pyplot(fig)
+
+# -------------------------------
+# 📦 Inventory Optimization (MILP)
+# -------------------------------
+elif section == "📦 Inventory Optimization (MILP)":
+    st.subheader("MILP-Based Inventory Optimization")
+
+    # Input parameters
+    annual_demand = st.number_input("Annual Demand (D)", min_value=100, value=1000)
+    ordering_cost = st.number_input("Ordering Cost (S)", min_value=1, value=500)
+    holding_cost = st.number_input("Holding Cost per Unit (H)", min_value=1, value=10)
+    backorder_cost = st.number_input("Backorder Cost (B)", min_value=1, value=50)
+    safety_stock = st.number_input("Safety Stock (SS)", min_value=0, value=100)
 
     if st.button("Compute Optimal Order Quantity"):
-        # Define optimization variable
-        q = cp.Variable(integer=True)
+        # Define integer decision variable
+        q = cp.Variable(integer=True, name="order_quantity")
 
-        # Ending inventory and backorder calculation
-        ending_inventory = current_inventory + q - demand
-        backorder = cp.pos(demand - (current_inventory + q))
+        try:
+            # Define the cost expression using cvxpy expressions
+            total_cost = (annual_demand / q) * ordering_cost + (q / 2) * holding_cost + safety_stock * backorder_cost
+            objective = cp.Minimize(total_cost)
+            constraints = [q >= 1, q <= 5000]
 
-        # Objective function
-        total_cost = holding_cost * cp.pos(ending_inventory) + unit_cost * q + backorder_cost * backorder
-        objective = cp.Minimize(total_cost)
+            problem = cp.Problem(objective, constraints)
+            result = problem.solve(solver=cp.SCS)
 
-        # Constraints
-        constraints = [q >= 0]
-
-        # Solve problem
-        problem = cp.Problem(objective, constraints)
-        problem.solve()
-
-        st.write("### Optimization Results")
-
-        if q.value is not None:
-            st.write(f"Optimal Order Quantity: {round(q.value)} units")
-        else:
-            st.write("Could not compute optimal order quantity.")
-
-        if ending_inventory.value is not None:
-            st.write(f"Expected Ending Inventory: {round(ending_inventory.value)} units")
-        else:
-            st.write("Could not compute expected ending inventory.")
-
-        if backorder.value is not None:
-            st.write(f"Expected Backorder Amount: {round(backorder.value)} units")
-        else:
-            st.write("Could not compute expected backorder amount.")
-
-    st.markdown("---")
-    st.markdown("This module helps you determine the right inventory levels balancing cost and availability.")
+            if problem.status in ["optimal", "optimal_inaccurate"]:
+                st.success("✅ Optimization completed successfully.")
+                # q.value may be a float; round for display
+                optimal_q = int(round(float(q.value)))
+                # total_cost.value might be None if solver failed to assign; guard it
+                total_cost_val = float(total_cost.value) if total_cost.value is not None else float(result)
+                st.write(f"🔢 Optimal Order Quantity: **{optimal_q} units**")
+                st.caption(f"Total Estimated Cost: ₹{round(total_cost_val):,}")
+            else:
+                st.warning(f"⚠️ Optimization did not converge. Status: `{problem.status}`")
+        except Exception as e:
+            st.error(f"❌ Optimization failed due to: `{str(e)}`")
